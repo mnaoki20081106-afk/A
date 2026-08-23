@@ -1,0 +1,20 @@
+{
+  "name": "mmp-link-check",
+  "version": "1.0.0",
+  "description": "自社LPからMMPトラッキングURL経由でApp Store/Google Playへ遷移するかを検証する社内QAツール",
+  "private": true,
+  "bin": {
+    "mmp-link-check": "./src/mmp-link-check.js"
+  },
+  "scripts": {
+    "setup": "playwright install chromium",
+    "check": "node src/mmp-link-check.js",
+    "test": "node test/smoke.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "playwright": "^1.47.0"
+  }
+}

@@ -1,0 +1,6 @@
+node_modules/
+artifacts/
+*.har
+config/*.json
+!config/*.example.json
+!config/example.json

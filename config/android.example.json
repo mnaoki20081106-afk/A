@@ -1,0 +1,12 @@
+{
+  "targetUrl": "https://lp.example.com/campaign/spring2026",
+  "allowedHosts": ["lp.example.com", "example.com"],
+  "trackingHosts": ["example.onelink.me", "app.adjust.com"],
+  "device": "Pixel 7",
+  "locale": "ja-JP",
+  "timezoneId": "Asia/Tokyo",
+  "cta": {
+    "texts": ["ダウンロード", "今すぐ始める"]
+  },
+  "expectedParams": ["pid", "c"]
+}

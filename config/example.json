@@ -1,0 +1,35 @@
+{
+  "targetUrl": "https://lp.example.com/campaign/spring2026",
+
+  "allowedHosts": ["lp.example.com", "example.com"],
+
+  "trackingHosts": [
+    "example.onelink.me",
+    "app.adjust.com",
+    "example.app.link",
+    "control.kochava.com"
+  ],
+
+  "device": "iPhone 13",
+  "locale": "ja-JP",
+  "timezoneId": "Asia/Tokyo",
+  "headless": true,
+
+  "cta": {
+    "selectors": ["[data-testid='cta-download']", "a.js-store-link"],
+    "texts": ["ダウンロード", "アプリを開く", "今すぐ始める"],
+    "nth": 0
+  },
+
+  "expectedParams": ["pid", "c", "af_sub1"],
+  "expectedParamValues": {
+    "pid": "owned_lp",
+    "c": "spring2026"
+  },
+
+  "navigationTimeoutMs": 30000,
+  "ctaTimeoutMs": 15000,
+  "redirectTimeoutMs": 20000,
+  "blockStoreNavigation": true,
+  "harPath": null
+}
