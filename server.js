@@ -9,6 +9,11 @@ puppeteer.use(StealthPlugin());
 const app = express();
 app.use(cors()); // どこからでも叩けるようにCORSを許可
 
+// 疎通確認用の軽量エンドポイント（Puppeteerを起動しない）
+// Cloud Runの「未認証の呼び出しを許可」やCORS設定だけを切り分けたいときに使う
+app.get('/', (req, res) => res.json({ ok: true, service: 'tiktok-stealth-api' }));
+app.get('/healthz', (req, res) => res.json({ ok: true }));
+
 app.get('/api/extract', async (req, res) => {
     const shortUrl = req.query.url;
     if (!shortUrl) return res.status(400).json({ success: false, error: 'URLが指定されていません' });
