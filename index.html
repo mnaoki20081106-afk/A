@@ -132,6 +132,9 @@
 </head>
 <body>
 
+<!-- 起動時エラー表示（#builder が非表示でも必ず見える位置） -->
+<div id="bootErr" class="msg err hidden" style="max-width:860px;margin:0 auto 16px"></div>
+
 <!-- 中継（リレー）モード -->
 <section id="relay" class="hidden">
   <div class="card">
@@ -159,6 +162,9 @@
       <div class="hint">専用のStealth APIを経由して公式LPを裏で取得し、生のトラッキングURLを復元します。</div>
     </div>
   </div>
+
+  <!-- エラー表示はボタンの直下に置く（スクロールしないと見えない位置だと「無反応」に見えるため） -->
+  <div id="errBox" class="msg err hidden"></div>
 
   <div class="card">
     <h2>ステップ2: 詳細パラメータ（自動入力されます）</h2>
@@ -194,8 +200,6 @@
     </div>
   </div>
 
-  <div id="errBox" class="msg err hidden"></div>
-
   <div id="results" class="hidden">
     <div class="card" id="relayCard" style="border: 2px solid var(--add);">
       <h2>✅ 完了！友達に送る最強リンク</h2>
@@ -212,7 +216,34 @@
 <script>
 (function () {
   'use strict';
-  var TARGET_KEYS = ['af_ios_url', 'af_android_url', 'af_dp', 'is_retargeting'];
+
+  var BTN_LABEL   = 'URLを抽出＆自動生成';
+  var API_BASE    = 'https://apiforurlgenerater-949226241642.asia-northeast1.run.app';
+  var TIMEOUT_MS  = 60000;  // Cloud Run のコールドスタート対策
+  var MIN_BUSY_MS = 400;    // 「抽出中...」を必ず目視できるようにする最低表示時間
+
+  function $(id) { return document.getElementById(id); }
+
+  /* ================== サイレント死の防止 ==================
+     初期化で例外が出るとリスナーが登録されず「ボタンが全く反応しない」状態になる。
+     その場合でも原因が画面に出るようにしておく。 */
+  function fatal(msg) {
+    try {
+      var box = $('bootErr');
+      if (box) {
+        box.textContent = 'スクリプトエラー: ' + msg;
+        box.classList.remove('hidden');
+      }
+      if (window.console && console.error) console.error('[generator]', msg);
+    } catch (ignored) {}
+  }
+  window.addEventListener('error', function (e) {
+    fatal((e.message || 'unknown error') + ' (' + (e.filename || '') + ':' + (e.lineno || 0) + ')');
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e.reason;
+    fatal('未処理のPromise: ' + ((r && r.message) || String(r)));
+  });
 
   function parseHttpUrl(raw) {
     if (typeof raw !== 'string') return null;
@@ -222,38 +253,67 @@
     return null;
   }
 
-  function $(id) { return document.getElementById(id); }
-
   /* ================== 自動抽出エンジン（自作Stealth API連携版） ================== */
-  async function handleExtract() {
-    var shortUrl = $('shortUrl').value.trim();
-    if (!shortUrl) return showError('短縮URLを入力してください。');
+  async function callExtractApi(shortUrl) {
+    var url = API_BASE + '/api/extract?url=' + encodeURIComponent(shortUrl);
+    var ctrl = ('AbortController' in window) ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, TIMEOUT_MS) : null;
 
+    var res;
+    try {
+      res = await fetch(url, ctrl ? { signal: ctrl.signal } : undefined);
+    } catch (e) {
+      if (e && e.name === 'AbortError') {
+        throw new Error('タイムアウト（' + Math.round(TIMEOUT_MS / 1000) + '秒）。APIが起動中か、応答がありません。');
+      }
+      // fetch が TypeError で落ちるのは CORS / DNS / オフライン / 混在コンテンツ
+      throw new Error('APIに接続できませんでした。CORS設定・ネットワーク・APIの稼働状況を確認してください。（' + ((e && e.message) || e) + '）');
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+
+    // res.ok を見ずに res.json() すると、HTMLのエラーページが返ったとき
+    // 意味不明なパースエラーになるので、本文を読んでから判定する。
+    var body = await res.text();
+    var data = null;
+    try { data = JSON.parse(body); } catch (e) {}
+
+    if (!res.ok) {
+      throw new Error('APIがHTTP ' + res.status + ' を返しました。' + ((data && data.error) || body.slice(0, 200)));
+    }
+    if (!data) throw new Error('APIの応答がJSONではありません。' + body.slice(0, 200));
+    if (!data.success) throw new Error(data.error || 'APIが success:false を返しました。');
+    if (!data.trackingUrl) throw new Error('APIの応答に trackingUrl が含まれていません。');
+    return data;
+  }
+
+  async function handleExtract() {
     var btn = $('btnExtract');
+    var shortUrl = $('shortUrl').value.trim();
+
+    hideError();
+    if (!shortUrl) { showError('短縮URLを入力してください。'); return; }
+    if (!parseHttpUrl(shortUrl)) { showError('http(s):// で始まる正しいURLを入力してください。'); return; }
+
+    var startedAt = Date.now();
     btn.textContent = '抽出中...';
     btn.disabled = true;
-    $('errBox').classList.add('hidden');
+
+    function restore() { btn.textContent = BTN_LABEL; btn.disabled = false; }
 
     try {
-      // 🌟 Google Cloud RunのAPIエンドポイントにパスを補完済み 🌟
-      var myApiUrl = 'https://apiforurlgenerater-949226241642.asia-northeast1.run.app/api/extract?url=' + encodeURIComponent(shortUrl);
-      
-      var res = await fetch(myApiUrl);
-      var data = await res.json();
-      
-      if (!data.success) throw new Error(data.error);
-
-      // APIから返ってきた最強のトラッキングURLをセット
+      var data = await callExtractApi(shortUrl);
       $('srcUrl').value = data.trackingUrl;
       btn.textContent = '抽出成功！';
-      setTimeout(function(){ btn.textContent = 'URLを抽出＆自動生成'; btn.disabled = false; }, 2000);
-      
+      setTimeout(restore, 1500);
       handleBuild(); // そのままリダイレクトURL生成へ
-
     } catch (e) {
-      btn.textContent = 'URLを抽出＆自動生成';
-      btn.disabled = false;
-      showError('抽出失敗: ' + (e.message || String(e)));
+      // 即座に失敗すると「抽出中...」が一瞬すぎて無反応に見えるため、最低時間だけ表示を保つ
+      var wait = Math.max(0, MIN_BUSY_MS - (Date.now() - startedAt));
+      setTimeout(function () {
+        restore();
+        showError('抽出失敗: ' + ((e && e.message) || String(e)));
+      }, wait);
     }
   }
 
@@ -271,7 +331,7 @@
   }
 
   function handleBuild() {
-    $('errBox').classList.add('hidden');
+    hideError();
     try {
       var opts = {
         iosUrl: $('iosUrl').value.trim(),
@@ -280,15 +340,15 @@
         retargeting: $('optRt').checked
       };
       var finalUrl = buildUrl($('srcUrl').value, opts);
-      
-      var self = new URL(window.location.href);
-      self.search = ''; self.hash = '';
-      self.searchParams.set('to', finalUrl);
-      
-      $('outRelay').textContent = self.toString();
+
+      var relayUrl = new URL(window.location.href);
+      relayUrl.search = ''; relayUrl.hash = '';
+      relayUrl.searchParams.set('to', finalUrl);
+
+      $('outRelay').textContent = relayUrl.toString();
       $('results').classList.remove('hidden');
     } catch (e) {
-      showError(e && e.message ? e.message : String(e));
+      showError((e && e.message) ? e.message : String(e));
     }
   }
 
@@ -297,58 +357,96 @@
     $('relayDest').textContent = destUrl;
     $('relayLink').href = destUrl;
     var delay = 1000 + Math.random() * 1000;
-    
+
     var bar = $('relayBar');
     bar.style.transition = 'width ' + delay + 'ms linear';
-    requestAnimationFrame(function(){ requestAnimationFrame(function(){ bar.style.width = '100%'; }); });
-    
-    setTimeout(function(){
+    requestAnimationFrame(function () { requestAnimationFrame(function () { bar.style.width = '100%'; }); });
+
+    setTimeout(function () {
       window.location.href = destUrl;
     }, delay);
   }
 
   function showError(msg) {
-    $('errBox').textContent = msg;
-    $('errBox').classList.remove('hidden');
+    var box = $('errBox');
+    box.textContent = msg;
+    box.classList.remove('hidden');
     $('results').classList.add('hidden');
+    if (box.scrollIntoView) box.scrollIntoView({ block: 'nearest' });
+  }
+
+  function hideError() {
+    $('errBox').classList.add('hidden');
+    $('bootErr').classList.add('hidden');
   }
 
   function copyText(text, btn) {
     var orig = btn.textContent;
-    var done = function(ok) {
+    var done = function (ok) {
       btn.textContent = ok ? 'コピーしました！' : '失敗しました';
-      setTimeout(function(){ btn.textContent = orig; }, 1500);
+      setTimeout(function () { btn.textContent = orig; }, 1500);
     };
     if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(text).then(function(){ done(true); }).catch(function(){ done(false); });
+      navigator.clipboard.writeText(text).then(function () { done(true); }).catch(function () { done(false); });
     } else {
       var ta = document.createElement('textarea'); ta.value = text;
       document.body.appendChild(ta); ta.select();
-      try { done(document.execCommand('copy')); } catch(e){ done(false); }
+      try { done(document.execCommand('copy')); } catch (e) { done(false); }
       document.body.removeChild(ta);
     }
   }
 
   /* ================== 初期化 ================== */
-  var to = new URLSearchParams(window.location.search).get('to');
-  if (to !== null) {
-    var dest = parseHttpUrl(to);
-    if (dest) runRelay(dest.toString());
-    else showError('不正なリンクです');
-  } else {
+  function init() {
+    var to = new URLSearchParams(window.location.search).get('to');
+
+    if (to !== null) {
+      var dest = parseHttpUrl(to);
+      if (dest) {
+        runRelay(dest.toString());
+      } else {
+        // 旧コードは #builder 内の errBox に書いていたため、非表示のまま真っ白になっていた
+        $('relay').classList.remove('hidden');
+        $('relayTitle').textContent = 'リンクが不正です';
+        $('relayMsg').textContent = 'リンクを生成し直してください。';
+      }
+      return;
+    }
+
     $('builder').classList.remove('hidden');
-    $('btnExtract').addEventListener('click', handleExtract);
+
+    var btnExtract = $('btnExtract');
+    if (!btnExtract) throw new Error('#btnExtract が見つかりません（DOMより先にスクリプトが動いています）。');
+
+    btnExtract.textContent = BTN_LABEL;
+    btnExtract.addEventListener('click', handleExtract);
     $('btnBuild').addEventListener('click', handleBuild);
-    $('btnClear').addEventListener('click', function(){
+    $('btnClear').addEventListener('click', function () {
       $('shortUrl').value = ''; $('srcUrl').value = '';
-      $('results').classList.add('hidden'); $('errBox').classList.add('hidden');
+      $('results').classList.add('hidden');
+      hideError();
     });
-    document.addEventListener('click', function(e){
-      var t = e.target.closest('button');
+    $('shortUrl').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); handleExtract(); }
+    });
+
+    document.addEventListener('click', function (e) {
+      var t = e.target && e.target.closest ? e.target.closest('button') : null;
       if (!t) return;
       if (t.dataset.copy) copyText($(t.dataset.copy).textContent, t);
       if (t.dataset.open) window.open($(t.dataset.open).textContent, '_blank', 'noopener');
     });
+  }
+
+  function boot() {
+    try { init(); } catch (e) { fatal((e && e.message) || String(e)); }
+  }
+
+  // <head> に移動されたり defer が付いても動くようにする
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
   }
 })();
 </script>
