@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>OneLink パラメータ補正 &amp; リダイレクト中継ジェネレーター</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --border: #d9dde3;
+    --text: #1b1f24;
+    --muted: #616b76;
+    --accent: #2f6feb;
+    --accent-text: #ffffff;
+    --code-bg: #f0f2f5;
+    --ok: #1a7f4b;
+    --warn: #9a6200;
+    --warn-bg: #fff6e0;
+    --err: #c0392b;
+    --add: #1a7f4b;
+    --over: #9a6200;
+    --radius: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c;
+      --panel: #1c2027;
+      --border: #303844;
+      --text: #e6e9ee;
+      --muted: #98a2b0;
+      --accent: #4d86f7;
+      --accent-text: #0d1117;
+      --code-bg: #12151a;
+      --ok: #4ec98a;
+      --warn: #e0b050;
+      --warn-bg: #2e2716;
+      --err: #f0776a;
+      --add: #4ec98a;
+      --over: #e0b050;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 16px 64px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Segoe UI", sans-serif;
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 0 0 12px; letter-spacing: .02em; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 24px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .hint { font-size: 12px; color: var(--muted); font-weight: 400; margin-top: 4px; }
+  input[type=text], textarea {
+    width: 100%;
+    padding: 9px 11px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+  }
+  input[type=text]:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  textarea { resize: vertical; min-height: 70px; }
+  .field { margin-bottom: 18px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row > input[type=text] { flex: 1 1 260px; }
+  button {
+    font: inherit;
+    font-size: 13px;
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button.chip { padding: 5px 10px; font-size: 12px; }
+  .checks { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+  .checks label { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; font-size: 13px; margin: 0; cursor: pointer; }
+  .checks input { margin-top: 4px; flex: none; }
+  .checks code { font-size: 12px; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  pre.out {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    margin: 0 0 8px;
+    font-size: 12.5px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 220px;
+    overflow: auto;
+  }
+  .msg { font-size: 13px; padding: 10px 12px; border-radius: 6px; margin-bottom: 16px; }
+  .msg.err { background: var(--code-bg); color: var(--err); border: 1px solid var(--err); }
+  .note { background: var(--warn-bg); color: var(--warn); border: 1px solid currentColor; font-size: 12.5px; padding: 10px 12px; border-radius: 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; word-break: break-all; }
+  th { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+  td.k { font-family: ui-monospace, monospace; white-space: nowrap; }
+  .tag { font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 3px; border: 1px solid currentColor; }
+  .tag.add { color: var(--add); }
+  .tag.over { color: var(--over); }
+  .tag.keep { color: var(--muted); }
+  .hidden { display: none !important; }
+  .empty { color: var(--muted); font-style: italic; }
+  /* --- relay --- */
+  #relay { max-width: 560px; margin: 12vh auto 0; text-align: center; }
+  #relay .card { padding: 32px 24px; }
+  .bar { height: 4px; background: var(--code-bg); border-radius: 2px; overflow: hidden; margin: 22px 0 18px; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 2px; }
+  #relayDest {
+    display: block; font-size: 12px; color: var(--muted);
+    word-break: break-all; margin-bottom: 20px; text-align: left;
+    background: var(--code-bg); padding: 10px; border-radius: 6px; max-height: 120px; overflow: auto;
+  }
+  a { color: var(--accent); }
+  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 28px; }
+</style>
+</head>
+<body>
+
+<!-- ============ 中継（リレー）モード ============ -->
+<section id="relay" class="hidden">
+  <div class="card">
+    <h2 id="relayTitle">リダイレクトしています…</h2>
+    <p class="sub" id="relayMsg" style="margin-bottom:0">まもなく遷移します。</p>
+    <div class="bar"><i id="relayBar"></i></div>
+    <span id="relayDest"></span>
+    <p style="margin:0;font-size:13px">
+      自動で切り替わらない場合は <a id="relayLink" href="#" rel="noopener">こちらをタップ</a>
+    </p>
+  </div>
+  <footer>OneLink Redirect Relay — テスト用中継ページ</footer>
+</section>
+
+<!-- ============ ビルダーモード ============ -->
+<section id="builder" class="wrap hidden">
+  <h1>OneLink パラメータ補正 &amp; リダイレクト中継ジェネレーター</h1>
+  <p class="sub">
+    MMP トラッキングリンクに <code>af_ios_url</code> / <code>af_android_url</code> / <code>af_dp</code> /
+    <code>is_retargeting</code> を付与・上書きし、パラメータ挙動とリダイレクト遷移を検証するためのツールです。
+  </p>
+
+  <div class="card">
+    <h2>1. 入力</h2>
+
+    <div class="field">
+      <label for="srcUrl">元のトラッキング URL</label>
+      <textarea id="srcUrl" spellcheck="false" placeholder="https://example.onelink.me/aBcD?pid=my_source&amp;c=my_campaign"></textarea>
+      <div class="hint">既存パラメータは保持され、対象キーのみ上書きされます。<code>http</code> / <code>https</code> のみ対応。</div>
+    </div>
+
+    <div class="field">
+      <label for="iosUrl">af_ios_url（iOS 向け遷移先）</label>
+      <div class="row">
+        <input type="text" id="iosUrl" spellcheck="false" placeholder="https://apps.apple.com/jp/app/idXXXXXXXXX">
+        <button type="button" class="chip" data-fill="iosUrl" data-value="https://apps.apple.com/jp/app/id">App Store 雛形</button>
+      </div>
+      <div class="hint">空欄の場合、このキーは変更しません。</div>
+    </div>
+
+    <div class="field">
+      <label for="androidUrl">af_android_url（Android 向け遷移先）</label>
+      <div class="row">
+        <input type="text" id="androidUrl" spellcheck="false" placeholder="https://play.google.com/store/apps/details?id=com.example.app">
+        <button type="button" class="chip" data-fill="androidUrl" data-value="https://play.google.com/store/apps/details?id=">Google Play 雛形</button>
+      </div>
+      <div class="hint">空欄の場合、このキーは変更しません。</div>
+    </div>
+
+    <div class="checks">
+      <label>
+        <input type="checkbox" id="optDp" checked>
+        <span><code>af_dp</code> を空文字で設定し、既定のカスタムスキーマ起動を無効化する</span>
+      </label>
+      <label>
+        <input type="checkbox" id="optRt" checked>
+        <span><code>is_retargeting=true</code> を設定する<span class="hint" style="display:inline"> — アトリビューションの帰属に影響します</span></span>
+      </label>
+      <label>
+        <input type="checkbox" id="optDouble">
+        <span>ストア URL を <code>encodeURIComponent()</code> で<strong>事前</strong>エンコードする（二重エンコード）
+          <span class="hint" style="display:inline"> — 通常は不要。<code>searchParams</code> が自動で1回エンコードします</span></span>
+      </label>
+      <label>
+        <input type="checkbox" id="optRelay">
+        <span>中継 URL も併せて生成する（このページを経由して遅延リダイレクト）</span>
+      </label>
+    </div>
+
+    <div class="row">
+      <button type="button" class="primary" id="btnBuild">URL を生成</button>
+      <button type="button" id="btnClear">クリア</button>
+    </div>
+  </div>
+
+  <div id="errBox" class="msg err hidden"></div>
+
+  <div id="results" class="hidden">
+    <div class="card">
+      <h2>2. 生成された URL</h2>
+      <pre class="out" id="outUrl"></pre>
+      <div class="row">
+        <button type="button" class="primary" data-copy="outUrl">クリップボードにコピー</button>
+        <button type="button" data-open="outUrl">新しいタブで開く</button>
+      </div>
+    </div>
+
+    <div class="card" id="relayCard">
+      <h2>3. 中継 URL（遅延リダイレクト経由）</h2>
+      <pre class="out" id="outRelay"></pre>
+      <div class="row">
+        <button type="button" class="primary" data-copy="outRelay">クリップボードにコピー</button>
+        <button type="button" data-open="outRelay">新しいタブで開く</button>
+      </div>
+      <p class="hint" style="margin-bottom:0">
+        このページ自身を中継点として <code>?to=</code> に宛先を保持し、1.0〜2.0 秒のランダム遅延後に遷移します。
+        <code>file://</code> で開いている場合は動作しないため、HTTP(S) 上に配置してください。
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>4. パラメータ差分</h2>
+      <table>
+        <thead><tr><th style="width:1%">状態</th><th style="width:26%">キー</th><th>値</th></tr></thead>
+        <tbody id="diffBody"></tbody>
+      </table>
+      <p class="hint" style="margin-bottom:0">値は <code>searchParams</code> によるデコード後の生値を表示しています。</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>利用範囲について:</strong>
+    <code>is_retargeting</code> と <code>af_*_url</code> はアトリビューションの帰属先と遷移先を書き換えるパラメータです。
+    自社が管理権を持つリンクに対してのみ使用してください。第三者が発行したリンクの帰属を書き換える行為は
+    アトリビューション不正にあたり、各 MMP の利用規約に違反します。
+  </div>
+
+  <footer>単一ファイル / 依存ライブラリなし / 通信は行いません</footer>
+</section>
+
+<script>
+(function () {
+  'use strict';
+
+  /* =========================================================
+   * 共通ユーティリティ
+   * =======================================================*/
+
+  var TARGET_KEYS = ['af_ios_url', 'af_android_url', 'af_dp', 'is_retargeting'];
+
+  /**
+   * http/https のみを許可して絶対 URL に正規化する。
+   * javascript:, data:, blob: 等を location.href に流し込ませないための門番。
+   * @returns {URL|null}
+   */
+  function parseHttpUrl(raw) {
+    if (typeof raw !== 'string') return null;
+    var s = raw.trim();
+    if (!s) return null;
+    var u;
+    try {
+      u = new URL(s);
+    } catch (e) {
+      return null;
+    }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    return u;
+  }
+
+  function $(id) { return document.getElementById(id); }
+
+  /* =========================================================
+   * 中継（リレー）モード
+   *   ?to=<encoded absolute http(s) url> でこのページに着地した場合、
+   *   1.0〜2.0 秒のランダム遅延後に宛先へ遷移する。
+   * =======================================================*/
+
+  var MIN_DELAY_MS = 1000;
+  var MAX_DELAY_MS = 2000;
+
+  function runRelay(destUrl) {
+    var relay = $('relay');
+    relay.classList.remove('hidden');
+
+    $('relayDest').textContent = destUrl;
+    var link = $('relayLink');
+    link.href = destUrl;               // 自動遷移が失敗した場合の手動フォールバック
+    link.textContent = '宛先へ移動する';
+
+    // 1.0s 〜 2.0s のランダム遅延
+    var delay = MIN_DELAY_MS + Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS);
+
+    $('relayMsg').textContent =
+      'まもなく遷移します（約 ' + (delay / 1000).toFixed(1) + ' 秒）。';
+
+    // 進捗バーを遅延時間に同期させる
+    var bar = $('relayBar');
+    bar.style.transition = 'width ' + delay + 'ms linear';
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { bar.style.width = '100%'; });
+    });
+
+    window.setTimeout(function () {
+      window.location.href = destUrl;
+      // 遷移がブロックされた場合に備えて案内を残す
+      window.setTimeout(function () {
+        $('relayTitle').textContent = '自動遷移がブロックされました';
+        $('relayMsg').textContent = '下のリンクから手動で移動してください。';
+      }, 1500);
+    }, delay);
+  }
+
+  function relayError(message) {
+    $('relay').classList.remove('hidden');
+    $('relayTitle').textContent = 'リダイレクトできません';
+    $('relayMsg').textContent = message;
+    $('relayBar').parentNode.classList.add('hidden');
+    $('relayLink').parentNode.classList.add('hidden');
+  }
+
+  /* =========================================================
+   * ビルダーモード
+   * =======================================================*/
+
+  /**
+   * 入力 URL に対象パラメータを追加・上書きする。
+   * 既存の他パラメータは保持される。
+   * @returns {{url: string, diff: Array}}
+   */
+  function buildUrl(rawUrl, opts) {
+    var url = parseHttpUrl(rawUrl);
+    if (!url) {
+      throw new Error('トラッキング URL を http:// または https:// から始まる形式で入力してください。');
+    }
+
+    // 上書き前の値を控えて差分表示に使う
+    var before = {};
+    TARGET_KEYS.forEach(function (k) {
+      before[k] = url.searchParams.has(k) ? url.searchParams.get(k) : null;
+    });
+
+    var params = url.searchParams;
+
+    // --- af_ios_url / af_android_url ---
+    // searchParams.set() は toString() 時に自動でパーセントエンコードするため、
+    // 通常は生値を渡す。opts.doubleEncode が真のときのみ事前エンコードして
+    // 意図的な二重エンコード（%3A -> %253A）を行う。
+    if (opts.iosUrl) {
+      var ios = parseHttpUrl(opts.iosUrl);
+      if (!ios) throw new Error('af_ios_url は http:// または https:// から始まる URL を指定してください。');
+      params.set('af_ios_url', opts.doubleEncode ? encodeURIComponent(ios.toString()) : ios.toString());
+    }
+    if (opts.androidUrl) {
+      var and = parseHttpUrl(opts.androidUrl);
+      if (!and) throw new Error('af_android_url は http:// または https:// から始まる URL を指定してください。');
+      params.set('af_android_url', opts.doubleEncode ? encodeURIComponent(and.toString()) : and.toString());
+    }
+
+    // --- af_dp ---
+    // 空文字を明示的にセットし、既定のカスタムスキーマ起動を無効化する（`af_dp=` として出力される）。
+    if (opts.emptyDp) params.set('af_dp', '');
+
+    // --- is_retargeting ---
+    if (opts.retargeting) params.set('is_retargeting', 'true');
+
+    // 差分（追加 / 上書き / 変更なし）を組み立てる
+    var diff = [];
+    TARGET_KEYS.forEach(function (k) {
+      if (!params.has(k)) return;
+      var after = params.get(k);
+      var prev = before[k];
+      var state = (prev === null) ? 'add' : (prev === after ? 'keep' : 'over');
+      diff.push({ key: k, value: after, prev: prev, state: state });
+    });
+
+    return { url: url.toString(), diff: diff };
+  }
+
+  /** 中継 URL（このページ + ?to=<宛先>）を組み立てる */
+  function buildRelayUrl(destUrl) {
+    var self = new URL(window.location.href);
+    self.search = '';
+    self.hash = '';
+    self.searchParams.set('to', destUrl);   // set() が自動でエンコードする
+    return self.toString();
+  }
+
+  function renderDiff(diff) {
+    var tbody = $('diffBody');
+    tbody.textContent = '';
+
+    if (!diff.length) {
+      var tr0 = document.createElement('tr');
+      var td0 = document.createElement('td');
+      td0.colSpan = 3;
+      td0.className = 'empty';
+      td0.textContent = '設定されたパラメータはありません。';
+      tr0.appendChild(td0);
+      tbody.appendChild(tr0);
+      return;
+    }
+
+    var LABEL = { add: '追加', over: '上書き', keep: '変更なし' };
+
+    diff.forEach(function (d) {
+      var tr = document.createElement('tr');
+
+      var tdState = document.createElement('td');
+      var tag = document.createElement('span');
+      tag.className = 'tag ' + d.state;
+      tag.textContent = LABEL[d.state];
+      tdState.appendChild(tag);
+
+      var tdKey = document.createElement('td');
+      tdKey.className = 'k';
+      tdKey.textContent = d.key;
+
+      var tdVal = document.createElement('td');
+      if (d.value === '') {
+        var em = document.createElement('span');
+        em.className = 'empty';
+        em.textContent = '(空文字)';
+        tdVal.appendChild(em);
+      } else {
+        tdVal.textContent = d.value;
+      }
+      if (d.state === 'over') {
+        var small = document.createElement('div');
+        small.className = 'hint';
+        small.textContent = '旧値: ' + (d.prev === '' ? '(空文字)' : d.prev);
+        tdVal.appendChild(small);
+      }
+
+      tr.appendChild(tdState);
+      tr.appendChild(tdKey);
+      tr.appendChild(tdVal);
+      tbody.appendChild(tr);
+    });
+  }
+
+  function showError(msg) {
+    var box = $('errBox');
+    box.textContent = msg;
+    box.classList.remove('hidden');
+    $('results').classList.add('hidden');
+  }
+
+  function clearError() {
+    $('errBox').classList.add('hidden');
+  }
+
+  function handleBuild() {
+    clearError();
+    try {
+      var opts = {
+        iosUrl:       $('iosUrl').value.trim(),
+        androidUrl:   $('androidUrl').value.trim(),
+        emptyDp:      $('optDp').checked,
+        retargeting:  $('optRt').checked,
+        doubleEncode: $('optDouble').checked
+      };
+
+      var result = buildUrl($('srcUrl').value, opts);
+
+      $('outUrl').textContent = result.url;
+      renderDiff(result.diff);
+
+      var wantRelay = $('optRelay').checked;
+      $('relayCard').classList.toggle('hidden', !wantRelay);
+      if (wantRelay) $('outRelay').textContent = buildRelayUrl(result.url);
+
+      $('results').classList.remove('hidden');
+    } catch (e) {
+      showError(e && e.message ? e.message : String(e));
+    }
+  }
+
+  /** navigator.clipboard は secure context 限定のためフォールバックを持つ */
+  function copyText(text, btn) {
+    function done(ok) {
+      var original = btn.dataset.label || btn.textContent;
+      btn.dataset.label = original;
+      btn.textContent = ok ? 'コピーしました' : 'コピーに失敗しました';
+      window.setTimeout(function () { btn.textContent = original; }, 1600);
+    }
+
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(legacyCopy(text)); });
+    } else {
+      done(legacyCopy(text));
+    }
+  }
+
+  function legacyCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  function initBuilder() {
+    $('builder').classList.remove('hidden');
+
+    $('btnBuild').addEventListener('click', handleBuild);
+
+    $('btnClear').addEventListener('click', function () {
+      ['srcUrl', 'iosUrl', 'androidUrl'].forEach(function (id) { $(id).value = ''; });
+      $('results').classList.add('hidden');
+      clearError();
+      $('srcUrl').focus();
+    });
+
+    // Ctrl/Cmd + Enter で生成
+    $('srcUrl').addEventListener('keydown', function (ev) {
+      if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') handleBuild();
+    });
+
+    document.addEventListener('click', function (ev) {
+      var t = ev.target.closest ? ev.target.closest('button') : null;
+      if (!t) return;
+
+      if (t.dataset.fill) {
+        var input = $(t.dataset.fill);
+        if (!input.value) input.value = t.dataset.value;
+        input.focus();
+        return;
+      }
+      if (t.dataset.copy) {
+        copyText($(t.dataset.copy).textContent, t);
+        return;
+      }
+      if (t.dataset.open) {
+        var dest = parseHttpUrl($(t.dataset.open).textContent);
+        if (dest) window.open(dest.toString(), '_blank', 'noopener');
+        return;
+      }
+    });
+  }
+
+  /* =========================================================
+   * エントリポイント: ?to= の有無でモードを分岐
+   * =======================================================*/
+
+  function main() {
+    var to = new URLSearchParams(window.location.search).get('to');
+
+    if (to === null) {
+      initBuilder();
+      return;
+    }
+
+    var dest = parseHttpUrl(to);
+    if (!dest) {
+      relayError('遷移先 (to) が不正か、http/https 以外のスキームが指定されています。');
+      return;
+    }
+    runRelay(dest.toString());
+  }
+
+  main();
+})();
+</script>
+</body>
+</html>
