@@ -156,7 +156,7 @@
         <input type="text" id="shortUrl" spellcheck="false" placeholder="ここにアプリからコピーしたURLをペースト">
         <button type="button" class="primary" id="btnExtract">URLを抽出＆自動生成</button>
       </div>
-      <div class="hint">プロキシを経由して公式LPを裏で取得し、生のトラッキングURLを復元します。</div>
+      <div class="hint">専用のStealth APIを経由して公式LPを裏で取得し、生のトラッキングURLを復元します。</div>
     </div>
   </div>
 
@@ -224,7 +224,7 @@
 
   function $(id) { return document.getElementById(id); }
 
-    /* ================== 自動抽出エンジン（自作Stealth API連携版） ================== */
+  /* ================== 自動抽出エンジン（自作Stealth API連携版） ================== */
   async function handleExtract() {
     var shortUrl = $('shortUrl').value.trim();
     if (!shortUrl) return showError('短縮URLを入力してください。');
@@ -235,8 +235,8 @@
     $('errBox').classList.add('hidden');
 
     try {
-      // ⚠️ ここをRenderで発行された自分のAPIのURLに書き換える ⚠️
-      var myApiUrl = 'https://apiforurlgenerater-949226241642.asia-northeast1.run.app/' + encodeURIComponent(shortUrl);
+      // 🌟 Google Cloud RunのAPIエンドポイントにパスを補完済み 🌟
+      var myApiUrl = 'https://apiforurlgenerater-949226241642.asia-northeast1.run.app/api/extract?url=' + encodeURIComponent(shortUrl);
       
       var res = await fetch(myApiUrl);
       var data = await res.json();
@@ -256,7 +256,6 @@
       showError('抽出失敗: ' + (e.message || String(e)));
     }
   }
-
 
   /* ================== ビルド・リレー機能 ================== */
   function buildUrl(rawUrl, opts) {
