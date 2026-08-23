@@ -224,7 +224,7 @@
 
   function $(id) { return document.getElementById(id); }
 
-  /* ================== 自動抽出エンジン ================== */
+    /* ================== 自動抽出エンジン（自作Stealth API連携版） ================== */
   async function handleExtract() {
     var shortUrl = $('shortUrl').value.trim();
     if (!shortUrl) return showError('短縮URLを入力してください。');
@@ -235,37 +235,20 @@
     $('errBox').classList.add('hidden');
 
     try {
-      // CORSプロキシ（allorigins）を経由して公式HTMLを取得
-      var proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(shortUrl);
-      var res = await fetch(proxyUrl);
-      if (!res.ok) throw new Error('プロキシ通信エラー');
+      // ⚠️ ここをRenderで発行された自分のAPIのURLに書き換える ⚠️
+      var myApiUrl = 'https://【あなたのRenderのURL】.onrender.com/api/extract?url=' + encodeURIComponent(shortUrl);
       
+      var res = await fetch(myApiUrl);
       var data = await res.json();
-      var html = data.contents;
-      if (!html) throw new Error('HTMLの取得に失敗');
+      
+      if (!data.success) throw new Error(data.error);
 
-      // JSONブロックの抽出
-      var match = html.match(/<script id="?universal-data"? type="?application\/json"?>([\s\S]*?)<\/script>/);
-      if (!match) throw new Error('データが見つかりません。TikTok側のBot対策に弾かれた可能性があります。');
-
-      var json = JSON.parse(match[1]);
-      var onelink = json?.app_context?.config?.shareOptions?.onelink;
-      var query = json?.app_context?.query || {};
-
-      if (!onelink) throw new Error('OneLinkが見つかりません。');
-
-      // パラメータの復元
-      var urlObj = new URL(onelink);
-      for (var key in query) {
-        urlObj.searchParams.set(key, query[key]);
-      }
-
-      // 入力欄にセットして即座に生成
-      $('srcUrl').value = urlObj.toString();
+      // APIから返ってきた最強のトラッキングURLをセット
+      $('srcUrl').value = data.trackingUrl;
       btn.textContent = '抽出成功！';
       setTimeout(function(){ btn.textContent = 'URLを抽出＆自動生成'; btn.disabled = false; }, 2000);
       
-      handleBuild();
+      handleBuild(); // そのままリダイレクトURL生成へ
 
     } catch (e) {
       btn.textContent = 'URLを抽出＆自動生成';
@@ -273,6 +256,7 @@
       showError('抽出失敗: ' + (e.message || String(e)));
     }
   }
+
 
   /* ================== ビルド・リレー機能 ================== */
   function buildUrl(rawUrl, opts) {
