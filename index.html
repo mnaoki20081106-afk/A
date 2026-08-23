@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>TikTok Lite 1タップリンク・ジェネレーター</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --border: #d9dde3;
+    --text: #1b1f24;
+    --muted: #616b76;
+    --accent: #ff0050;
+    --accent-text: #ffffff;
+    --code-bg: #f0f2f5;
+    --ok: #1a7f4b;
+    --warn: #9a6200;
+    --warn-bg: #fff6e0;
+    --err: #c0392b;
+    --add: #1a7f4b;
+    --over: #9a6200;
+    --radius: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171c;
+      --panel: #1c2027;
+      --border: #303844;
+      --text: #e6e9ee;
+      --muted: #98a2b0;
+      --accent: #ff0050;
+      --accent-text: #ffffff;
+      --code-bg: #12151a;
+      --ok: #4ec98a;
+      --warn: #e0b050;
+      --warn-bg: #2e2716;
+      --err: #f0776a;
+      --add: #4ec98a;
+      --over: #e0b050;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 16px 64px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Segoe UI", sans-serif;
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; color: var(--accent); }
+  h2 { font-size: 15px; margin: 0 0 12px; letter-spacing: .02em; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 24px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .hint { font-size: 12px; color: var(--muted); font-weight: 400; margin-top: 4px; }
+  input[type=text], textarea {
+    width: 100%;
+    padding: 9px 11px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+  }
+  input[type=text]:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  textarea { resize: vertical; min-height: 70px; }
+  .field { margin-bottom: 18px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row > input[type=text] { flex: 1 1 260px; }
+  button {
+    font: inherit;
+    font-size: 13px;
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: 0.6; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button.chip { padding: 5px 10px; font-size: 12px; }
+  .checks { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+  .checks label { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; font-size: 13px; margin: 0; cursor: pointer; }
+  .checks input { margin-top: 4px; flex: none; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  pre.out {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    margin: 0 0 8px;
+    font-size: 12.5px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 220px;
+    overflow: auto;
+  }
+  .msg { font-size: 13px; padding: 10px 12px; border-radius: 6px; margin-bottom: 16px; }
+  .msg.err { background: var(--code-bg); color: var(--err); border: 1px solid var(--err); }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; word-break: break-all; }
+  th { color: var(--muted); font-weight: 600; font-size: 11.5px; }
+  td.k { font-family: ui-monospace, monospace; white-space: nowrap; }
+  .tag { font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 3px; border: 1px solid currentColor; }
+  .tag.add { color: var(--add); }
+  .tag.over { color: var(--over); }
+  .hidden { display: none !important; }
+  /* --- relay --- */
+  #relay { max-width: 560px; margin: 12vh auto 0; text-align: center; }
+  #relay .card { padding: 32px 24px; }
+  .bar { height: 4px; background: var(--code-bg); border-radius: 2px; overflow: hidden; margin: 22px 0 18px; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 2px; }
+  #relayDest { display: block; font-size: 12px; color: var(--muted); word-break: break-all; margin-bottom: 20px; text-align: left; background: var(--code-bg); padding: 10px; border-radius: 6px; max-height: 120px; overflow: auto; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<!-- 中継（リレー）モード -->
+<section id="relay" class="hidden">
+  <div class="card">
+    <h2 id="relayTitle">ストアへ移動しています…</h2>
+    <p class="sub" id="relayMsg" style="margin-bottom:0">少々お待ちください。</p>
+    <div class="bar"><i id="relayBar"></i></div>
+    <span id="relayDest"></span>
+    <p style="margin:0;font-size:13px">自動で切り替わらない場合は <a id="relayLink" href="#" rel="noopener">こちらをタップ</a></p>
+  </div>
+</section>
+
+<!-- ビルダーモード -->
+<section id="builder" class="wrap hidden">
+  <h1>最強リンク ジェネレーター</h1>
+  <p class="sub">公式の短い招待リンクを入れるだけで、Lite強制誘導用の遅延リダイレクトURLを一発生成します。</p>
+
+  <div class="card" style="border: 1px solid var(--accent);">
+    <h2>🌟 ステップ1: 短縮URLから自動展開</h2>
+    <div class="field" style="margin-bottom: 0;">
+      <label for="shortUrl">TikTok Liteの招待リンク（例: https://lite.tiktok.com/t/...）</label>
+      <div class="row">
+        <input type="text" id="shortUrl" spellcheck="false" placeholder="ここにアプリからコピーしたURLをペースト">
+        <button type="button" class="primary" id="btnExtract">URLを抽出＆自動生成</button>
+      </div>
+      <div class="hint">プロキシを経由して公式LPを裏で取得し、生のトラッキングURLを復元します。</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>ステップ2: 詳細パラメータ（自動入力されます）</h2>
+    
+    <div class="field">
+      <label for="srcUrl">元のトラッキング URL（抽出結果）</label>
+      <textarea id="srcUrl" spellcheck="false" placeholder="抽出すると自動で入力されます"></textarea>
+    </div>
+
+    <div class="field">
+      <label for="iosUrl">af_ios_url（iOS 向け遷移先）</label>
+      <div class="row">
+        <input type="text" id="iosUrl" spellcheck="false" value="https://apps.apple.com/jp/app/tiktok-lite/id6447160980">
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="androidUrl">af_android_url（Android 向け遷移先）</label>
+      <div class="row">
+        <input type="text" id="androidUrl" spellcheck="false" value="https://play.google.com/store/apps/details?id=com.zhiliaoapp.musically.go">
+      </div>
+    </div>
+
+    <div class="checks">
+      <label><input type="checkbox" id="optDp" checked><span><code>af_dp</code> を空文字で設定（通常版の起動ブロック）</span></label>
+      <label><input type="checkbox" id="optRt" checked><span><code>is_retargeting=true</code> を設定</span></label>
+      <label class="hidden"><input type="checkbox" id="optRelay" checked><span>中継URL生成</span></label>
+    </div>
+
+    <div class="row">
+      <button type="button" id="btnBuild">手動で生成</button>
+      <button type="button" id="btnClear">クリア</button>
+    </div>
+  </div>
+
+  <div id="errBox" class="msg err hidden"></div>
+
+  <div id="results" class="hidden">
+    <div class="card" id="relayCard" style="border: 2px solid var(--add);">
+      <h2>✅ 完了！友達に送る最強リンク</h2>
+      <pre class="out" id="outRelay"></pre>
+      <div class="row">
+        <button type="button" class="primary" data-copy="outRelay">クリップボードにコピーする</button>
+        <button type="button" data-open="outRelay">自分でテストする</button>
+      </div>
+      <p class="hint" style="margin-bottom:0">このリンクを踏むと、1〜2秒のローディング画面を挟んで直接App Storeが開きます。</p>
+    </div>
+  </div>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  var TARGET_KEYS = ['af_ios_url', 'af_android_url', 'af_dp', 'is_retargeting'];
+
+  function parseHttpUrl(raw) {
+    if (typeof raw !== 'string') return null;
+    var s = raw.trim();
+    if (!s) return null;
+    try { var u = new URL(s); if (u.protocol === 'http:' || u.protocol === 'https:') return u; } catch (e) {}
+    return null;
+  }
+
+  function $(id) { return document.getElementById(id); }
+
+  /* ================== 自動抽出エンジン ================== */
+  async function handleExtract() {
+    var shortUrl = $('shortUrl').value.trim();
+    if (!shortUrl) return showError('短縮URLを入力してください。');
+
+    var btn = $('btnExtract');
+    btn.textContent = '抽出中...';
+    btn.disabled = true;
+    $('errBox').classList.add('hidden');
+
+    try {
+      // CORSプロキシ（allorigins）を経由して公式HTMLを取得
+      var proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(shortUrl);
+      var res = await fetch(proxyUrl);
+      if (!res.ok) throw new Error('プロキシ通信エラー');
+      
+      var data = await res.json();
+      var html = data.contents;
+      if (!html) throw new Error('HTMLの取得に失敗');
+
+      // JSONブロックの抽出
+      var match = html.match(/<script id="?universal-data"? type="?application\/json"?>([\s\S]*?)<\/script>/);
+      if (!match) throw new Error('データが見つかりません。TikTok側のBot対策に弾かれた可能性があります。');
+
+      var json = JSON.parse(match[1]);
+      var onelink = json?.app_context?.config?.shareOptions?.onelink;
+      var query = json?.app_context?.query || {};
+
+      if (!onelink) throw new Error('OneLinkが見つかりません。');
+
+      // パラメータの復元
+      var urlObj = new URL(onelink);
+      for (var key in query) {
+        urlObj.searchParams.set(key, query[key]);
+      }
+
+      // 入力欄にセットして即座に生成
+      $('srcUrl').value = urlObj.toString();
+      btn.textContent = '抽出成功！';
+      setTimeout(function(){ btn.textContent = 'URLを抽出＆自動生成'; btn.disabled = false; }, 2000);
+      
+      handleBuild();
+
+    } catch (e) {
+      btn.textContent = 'URLを抽出＆自動生成';
+      btn.disabled = false;
+      showError('抽出失敗: ' + (e.message || String(e)));
+    }
+  }
+
+  /* ================== ビルド・リレー機能 ================== */
+  function buildUrl(rawUrl, opts) {
+    var url = parseHttpUrl(rawUrl);
+    if (!url) throw new Error('トラッキング URL が不正です。');
+    var params = url.searchParams;
+
+    if (opts.iosUrl) params.set('af_ios_url', opts.iosUrl);
+    if (opts.androidUrl) params.set('af_android_url', opts.androidUrl);
+    if (opts.emptyDp) params.set('af_dp', '');
+    if (opts.retargeting) params.set('is_retargeting', 'true');
+    return url.toString();
+  }
+
+  function handleBuild() {
+    $('errBox').classList.add('hidden');
+    try {
+      var opts = {
+        iosUrl: $('iosUrl').value.trim(),
+        androidUrl: $('androidUrl').value.trim(),
+        emptyDp: $('optDp').checked,
+        retargeting: $('optRt').checked
+      };
+      var finalUrl = buildUrl($('srcUrl').value, opts);
+      
+      var self = new URL(window.location.href);
+      self.search = ''; self.hash = '';
+      self.searchParams.set('to', finalUrl);
+      
+      $('outRelay').textContent = self.toString();
+      $('results').classList.remove('hidden');
+    } catch (e) {
+      showError(e && e.message ? e.message : String(e));
+    }
+  }
+
+  function runRelay(destUrl) {
+    $('relay').classList.remove('hidden');
+    $('relayDest').textContent = destUrl;
+    $('relayLink').href = destUrl;
+    var delay = 1000 + Math.random() * 1000;
+    
+    var bar = $('relayBar');
+    bar.style.transition = 'width ' + delay + 'ms linear';
+    requestAnimationFrame(function(){ requestAnimationFrame(function(){ bar.style.width = '100%'; }); });
+    
+    setTimeout(function(){
+      window.location.href = destUrl;
+    }, delay);
+  }
+
+  function showError(msg) {
+    $('errBox').textContent = msg;
+    $('errBox').classList.remove('hidden');
+    $('results').classList.add('hidden');
+  }
+
+  function copyText(text, btn) {
+    var orig = btn.textContent;
+    var done = function(ok) {
+      btn.textContent = ok ? 'コピーしました！' : '失敗しました';
+      setTimeout(function(){ btn.textContent = orig; }, 1500);
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function(){ done(true); }).catch(function(){ done(false); });
+    } else {
+      var ta = document.createElement('textarea'); ta.value = text;
+      document.body.appendChild(ta); ta.select();
+      try { done(document.execCommand('copy')); } catch(e){ done(false); }
+      document.body.removeChild(ta);
+    }
+  }
+
+  /* ================== 初期化 ================== */
+  var to = new URLSearchParams(window.location.search).get('to');
+  if (to !== null) {
+    var dest = parseHttpUrl(to);
+    if (dest) runRelay(dest.toString());
+    else showError('不正なリンクです');
+  } else {
+    $('builder').classList.remove('hidden');
+    $('btnExtract').addEventListener('click', handleExtract);
+    $('btnBuild').addEventListener('click', handleBuild);
+    $('btnClear').addEventListener('click', function(){
+      $('shortUrl').value = ''; $('srcUrl').value = '';
+      $('results').classList.add('hidden'); $('errBox').classList.add('hidden');
+    });
+    document.addEventListener('click', function(e){
+      var t = e.target.closest('button');
+      if (!t) return;
+      if (t.dataset.copy) copyText($(t.dataset.copy).textContent, t);
+      if (t.dataset.open) window.open($(t.dataset.open).textContent, '_blank', 'noopener');
+    });
+  }
+})();
+</script>
+</body>
+</html>
