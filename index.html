@@ -236,7 +236,7 @@
 
     try {
       // ⚠️ ここをRenderで発行された自分のAPIのURLに書き換える ⚠️
-      var myApiUrl = 'https://【あなたのRenderのURL】.onrender.com/api/extract?url=' + encodeURIComponent(shortUrl);
+      var myApiUrl = 'https://apiforurlgenerater-949226241642.asia-northeast1.run.app/' + encodeURIComponent(shortUrl);
       
       var res = await fetch(myApiUrl);
       var data = await res.json();
