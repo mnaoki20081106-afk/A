@@ -111,7 +111,7 @@
     max-height: 220px;
     overflow: auto;
   }
-  .msg { font-size: 13px; padding: 10px 12px; border-radius: 6px; margin-bottom: 16px; }
+  .msg { font-size: 13px; padding: 10px 12px; border-radius: 6px; margin-bottom: 16px; white-space: pre-wrap; }
   .msg.err { background: var(--code-bg); color: var(--err); border: 1px solid var(--err); }
   table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; word-break: break-all; }
@@ -218,11 +218,45 @@
   'use strict';
 
   var BTN_LABEL   = 'URLを抽出＆自動生成';
-  var API_BASE    = 'https://apiforurlgenerater-949226241642.asia-northeast1.run.app';
+  var API_HOST    = 'https://apiforurlgenerater-949226241642.asia-northeast1.run.app';
+  var HEALTH_TAG  = 'tiktok-stealth-api';
   var TIMEOUT_MS  = 60000;  // Cloud Run のコールドスタート対策
+  var PROBE_MS    = 8000;   // 原因切り分けプローブのタイムアウト
   var MIN_BUSY_MS = 400;    // 「抽出中...」を必ず目視できるようにする最低表示時間
 
   function $(id) { return document.getElementById(id); }
+
+  function withTimeout(ms) {
+    var ctrl = ('AbortController' in window) ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, ms) : null;
+    return {
+      signal: ctrl ? ctrl.signal : undefined,
+      clear: function () { if (timer) clearTimeout(timer); }
+    };
+  }
+
+  /* このページと同じオリジンでAPIが配信されているかを一度だけ判定する。
+     配信されていれば相対パスを使うのでCORSが一切発生しない（file:// 制限も無関係）。
+     GitHub Pages等に置かれている場合は絶対URLにフォールバックする。 */
+  var apiBasePromise = null;
+  function resolveApiBase() {
+    if (apiBasePromise) return apiBasePromise;
+
+    var proto = window.location.protocol;
+    if (proto !== 'http:' && proto !== 'https:') {
+      apiBasePromise = Promise.resolve(API_HOST);   // file:// など
+    } else if (window.location.origin === API_HOST) {
+      apiBasePromise = Promise.resolve('');
+    } else {
+      var t = withTimeout(PROBE_MS);
+      apiBasePromise = fetch('/healthz', { cache: 'no-store', signal: t.signal })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) { return (j && j.service === HEALTH_TAG) ? '' : API_HOST; })
+        .catch(function () { return API_HOST; })
+        .then(function (base) { t.clear(); return base; });
+    }
+    return apiBasePromise;
+  }
 
   /* ================== サイレント死の防止 ==================
      初期化で例外が出るとリスナーが登録されず「ボタンが全く反応しない」状態になる。
@@ -255,7 +289,8 @@
 
   /* ================== 自動抽出エンジン（自作Stealth API連携版） ================== */
   async function callExtractApi(shortUrl) {
-    var url = API_BASE + '/api/extract?url=' + encodeURIComponent(shortUrl);
+    var base = await resolveApiBase();
+    var url = base + '/api/extract?url=' + encodeURIComponent(shortUrl);
     var ctrl = ('AbortController' in window) ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, TIMEOUT_MS) : null;
 
@@ -266,8 +301,11 @@
       if (e && e.name === 'AbortError') {
         throw new Error('タイムアウト（' + Math.round(TIMEOUT_MS / 1000) + '秒）。APIが起動中か、応答がありません。');
       }
-      // fetch が TypeError で落ちるのは CORS / DNS / オフライン / 混在コンテンツ
-      throw new Error('APIに接続できませんでした。CORS設定・ネットワーク・APIの稼働状況を確認してください。（' + ((e && e.message) || e) + '）');
+      // fetch が TypeError で落ちるのは CORS / DNS / オフライン / 混在コンテンツ。
+      // Chrome は "Failed to fetch"、Safari は "Load failed" という文言になる。
+      var err = new Error('APIに接続できませんでした。（' + ((e && e.message) || e) + '）');
+      err.networkLevel = true;
+      throw err;
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -285,6 +323,45 @@
     if (!data.success) throw new Error(data.error || 'APIが success:false を返しました。');
     if (!data.trackingUrl) throw new Error('APIの応答に trackingUrl が含まれていません。');
     return data;
+  }
+
+  /* ネットワーク層で落ちたときに、原因を自動で切り分ける。
+     no-cors プローブが通れば「サーバには届いているがCORSヘッダが無い」、
+     通らなければ「そもそもサーバに届いていない」と判別できる。 */
+  async function diagnose() {
+    var notes = [];
+
+    if (window.location.protocol === 'file:') {
+      notes.push('・このページは file:// で開かれています。SafariやChromeは file:// からの外部API呼び出しを既定でブロックします。'
+        + '最も確実なのは ' + API_HOST + '/ を直接開くことです（APIと同一オリジンになりCORSも不要）。');
+    }
+    if (navigator.onLine === false) {
+      notes.push('・ブラウザがオフライン状態です。');
+    }
+
+    var reachable = false;
+    try {
+      var ctrl = ('AbortController' in window) ? new AbortController() : null;
+      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, PROBE_MS) : null;
+      try {
+        // ヘルスチェックを叩くだけ（Puppeteerを起動させない安いプローブ）
+        await fetch(API_HOST + '/healthz', { mode: 'no-cors', cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
+        reachable = true;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    } catch (e) {}
+
+    if (reachable) {
+      notes.push('・サーバへの到達は成功しました（no-corsプローブ）。つまりCORSヘッダが返っていません。'
+        + 'Cloud Runの「未認証の呼び出しを許可(allow-unauthenticated)」が無効だと、Cloud Run側が'
+        + 'CORSヘッダ無しの403を返すため、このエラーになります。まずそこを確認してください。');
+    } else {
+      notes.push('・サーバへ到達できませんでした（no-corsプローブも失敗）。'
+        + 'APIのURL誤り / サービス停止・デプロイ失敗 / DNS / 拡張機能・コンテンツブロッカー のいずれかです。'
+        + 'ターミナルで curl -i "' + API_HOST + '/healthz" を実行すると切り分けられます。');
+    }
+    return notes;
   }
 
   async function handleExtract() {
@@ -308,11 +385,19 @@
       setTimeout(restore, 1500);
       handleBuild(); // そのままリダイレクトURL生成へ
     } catch (e) {
+      var msg = '抽出失敗: ' + ((e && e.message) || String(e));
+
+      if (e && e.networkLevel) {
+        btn.textContent = '原因を診断中...';
+        var notes = await diagnose();
+        msg += '\n\n【自動診断】\n' + notes.join('\n');
+      }
+
       // 即座に失敗すると「抽出中...」が一瞬すぎて無反応に見えるため、最低時間だけ表示を保つ
       var wait = Math.max(0, MIN_BUSY_MS - (Date.now() - startedAt));
       setTimeout(function () {
         restore();
-        showError('抽出失敗: ' + ((e && e.message) || String(e)));
+        showError(msg);
       }, wait);
     }
   }

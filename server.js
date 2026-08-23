@@ -1,3 +1,4 @@
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const puppeteer = require('puppeteer-extra');
@@ -8,6 +9,15 @@ puppeteer.use(StealthPlugin());
 
 const app = express();
 app.use(cors()); // どこからでも叩けるようにCORSを許可
+
+// フロントエンド(index.html)を同一オリジンで配信する。
+// これによりCORSが一切不要になり、file:// で開いたときのブラウザ制限も回避できる。
+// さらに、生成される中継リンクが共有可能な https URL になる（file:// だと他人に送れない）。
+app.use(express.static(path.join(__dirname)));
+
+// 疎通確認用の軽量エンドポイント（Puppeteerを起動しない）
+// Cloud Runの「未認証の呼び出しを許可」やCORS設定だけを切り分けたいときに使う
+app.get('/healthz', (req, res) => res.json({ ok: true, service: 'tiktok-stealth-api' }));
 
 app.get('/api/extract', async (req, res) => {
     const shortUrl = req.query.url;
