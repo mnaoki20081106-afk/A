@@ -353,9 +353,13 @@
     } catch (e) {}
 
     if (reachable) {
-      notes.push('・サーバへの到達は成功しました（no-corsプローブ）。つまりCORSヘッダが返っていません。'
-        + 'Cloud Runの「未認証の呼び出しを許可(allow-unauthenticated)」が無効だと、Cloud Run側が'
-        + 'CORSヘッダ無しの403を返すため、このエラーになります。まずそこを確認してください。');
+      notes.push('・サーバへの到達は成功しました（no-corsプローブ）。つまり応答にCORSヘッダが付いていません。'
+        + 'これはExpressの cors() まで処理が届いていないことを意味します。次の順で確認してください:\n'
+        + '  (1) ' + API_HOST + '/ をブラウザで直接開く。'
+        + '「Sorry, this is just a placeholder…」が出るならビルド失敗でコードが未デプロイです。\n'
+        + '  (2) 「Error: Forbidden」が出るなら Cloud Run の'
+        + '「未認証の呼び出しを許可(allow-unauthenticated)」が無効です。\n'
+        + '  (3) 「Service Unavailable」が出るならコンテナの起動失敗です（Chromeはメモリ1GiB以上が必要）。');
     } else {
       notes.push('・サーバへ到達できませんでした（no-corsプローブも失敗）。'
         + 'APIのURL誤り / サービス停止・デプロイ失敗 / DNS / 拡張機能・コンテンツブロッカー のいずれかです。'
