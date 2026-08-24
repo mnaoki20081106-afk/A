@@ -429,7 +429,12 @@
     'af_r',
     'redirect_url',
     'af_ios_fallback',
-    'af_android_fallback'
+    'af_android_fallback',
+    // 過去のインセンティブ系キャンペーンの残骸。
+    // 残っていると aweme:// 等のカスタムスキームへ勝手に飛ばされる。
+    'inc_target_url',
+    'is_inc_roma',
+    'incentive_redirect'
   ];
 
   var ONELINK_RE = /(^|\.)onelink\.me$/i;
