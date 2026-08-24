@@ -218,8 +218,7 @@
   'use strict';
 
   var BTN_LABEL   = 'URLを抽出＆自動生成';
-  var API_HOST    = 'https://apiforurlgenerater-949226241642.asia-northeast1.run.app';
-  var HEALTH_TAG  = 'tiktok-stealth-api';
+  var API_HOST    = 'https://apiforurlgenerater-oxsh2xkm7a-an.a.run.app';
   var TIMEOUT_MS  = 60000;  // Cloud Run のコールドスタート対策
   var PROBE_MS    = 8000;   // 原因切り分けプローブのタイムアウト
   var MIN_BUSY_MS = 400;    // 「抽出中...」を必ず目視できるようにする最低表示時間
@@ -235,27 +234,27 @@
     };
   }
 
-  /* このページと同じオリジンでAPIが配信されているかを一度だけ判定する。
-     配信されていれば相対パスを使うのでCORSが一切発生しない（file:// 制限も無関係）。
-     GitHub Pages等に置かれている場合は絶対URLにフォールバックする。 */
-  var apiBasePromise = null;
-  function resolveApiBase() {
-    if (apiBasePromise) return apiBasePromise;
+  /* APIをどこに投げるかを決める。
+     server.js がこのページ自体を配信するので、静的ホスティングでない限り
+     「今いるオリジン = API」とみなせる。相対パスならCORSが一切発生しない。
 
-    var proto = window.location.protocol;
-    if (proto !== 'http:' && proto !== 'https:') {
-      apiBasePromise = Promise.resolve(API_HOST);   // file:// など
-    } else if (window.location.origin === API_HOST) {
-      apiBasePromise = Promise.resolve('');
-    } else {
-      var t = withTimeout(PROBE_MS);
-      apiBasePromise = fetch('/healthz', { cache: 'no-store', signal: t.signal })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (j) { return (j && j.service === HEALTH_TAG) ? '' : API_HOST; })
-        .catch(function () { return API_HOST; })
-        .then(function (base) { t.clear(); return base; });
-    }
-    return apiBasePromise;
+     判定を /healthz の疎通結果に依存させない。依存させると、APIの一部が
+     不調なだけで同一オリジン配信まで巻き添えで壊れるため。 */
+  /* このページを配信しているオリジンがAPIも持っているか。
+     APIはCloud Run上にしか無いので、Cloud Run（または同一ホスト、ローカル実行）から
+     配信されている場合だけ同一オリジン扱いにする。
+     GitHub Pagesなどの静的ホスティングは該当しないので絶対URLで呼ぶ。 */
+  function sameOriginServesApi() {
+    var loc = window.location;
+    if (loc.protocol !== 'http:' && loc.protocol !== 'https:') return false;  // file:// など
+    if (loc.origin === API_HOST) return true;
+    if (/\.run\.app$/i.test(loc.hostname)) return true;                      // Cloud Run
+    if (loc.hostname === 'localhost' || loc.hostname === '127.0.0.1') return true;  // ローカル実行
+    return false;
+  }
+
+  function resolveApiBase() {
+    return sameOriginServesApi() ? '' : API_HOST;
   }
 
   /* ================== サイレント死の防止 ==================
@@ -289,8 +288,7 @@
 
   /* ================== 自動抽出エンジン（自作Stealth API連携版） ================== */
   async function callExtractApi(shortUrl) {
-    var base = await resolveApiBase();
-    var url = base + '/api/extract?url=' + encodeURIComponent(shortUrl);
+    var url = resolveApiBase() + '/api/extract?url=' + encodeURIComponent(shortUrl);
     var ctrl = ('AbortController' in window) ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, TIMEOUT_MS) : null;
 
