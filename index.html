@@ -111,6 +111,10 @@
     max-height: 220px;
     overflow: auto;
   }
+  pre.out.copyable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  pre.out.copyable:hover { border-color: var(--accent); }
+  pre.out.copyable:active { border-color: var(--accent); background: var(--panel); }
+  .copied { font-size: 12px; font-weight: 600; color: var(--ok); margin-left: 4px; }
   .msg { font-size: 13px; padding: 10px 12px; border-radius: 6px; margin-bottom: 16px; white-space: pre-wrap; }
   .msg.err { background: var(--code-bg); color: var(--err); border: 1px solid var(--err); }
   table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
@@ -121,12 +125,25 @@
   .tag.add { color: var(--add); }
   .tag.over { color: var(--over); }
   .hidden { display: none !important; }
-  /* --- relay --- */
-  #relay { max-width: 560px; margin: 12vh auto 0; text-align: center; }
-  #relay .card { padding: 32px 24px; }
-  .bar { height: 4px; background: var(--code-bg); border-radius: 2px; overflow: hidden; margin: 22px 0 18px; }
-  .bar > i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 2px; }
-  #relayDest { display: block; font-size: 12px; color: var(--muted); word-break: break-all; margin-bottom: 20px; text-align: left; background: var(--code-bg); padding: 10px; border-radius: 6px; max-height: 120px; overflow: auto; }
+  /* --- relay: 遷移中は何も表示せず全面を黒くする --- */
+  #relay {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #relay a, #relay p {
+    color: #b9b9b9;
+    font-size: 13px;
+    text-align: center;
+    padding: 24px;
+    margin: 0;
+    word-break: break-all;
+  }
+  #relay a { color: #8ab4f8; }
   a { color: var(--accent); }
 </style>
 </head>
@@ -135,15 +152,10 @@
 <!-- 起動時エラー表示（#builder が非表示でも必ず見える位置） -->
 <div id="bootErr" class="msg err hidden" style="max-width:860px;margin:0 auto 16px"></div>
 
-<!-- 中継（リレー）モード -->
+<!-- 中継（リレー）モード: 遷移中は黒画面のみ。下の2つは通常表示されない -->
 <section id="relay" class="hidden">
-  <div class="card">
-    <h2 id="relayTitle">ストアへ移動しています…</h2>
-    <p class="sub" id="relayMsg" style="margin-bottom:0">少々お待ちください。</p>
-    <div class="bar"><i id="relayBar"></i></div>
-    <span id="relayDest"></span>
-    <p style="margin:0;font-size:13px">自動で切り替わらない場合は <a id="relayLink" href="#" rel="noopener">こちらをタップ</a></p>
-  </div>
+  <a id="relayLink" class="hidden" href="#" rel="noopener">タップして続行</a>
+  <p id="relayMsg" class="hidden"></p>
 </section>
 
 <!-- ビルダーモード -->
@@ -212,11 +224,14 @@
   <div id="results" class="hidden">
     <div class="card" id="relayCard" style="border: 2px solid var(--add);">
       <h2>✅ 完了！友達に送る最強リンク</h2>
-      <pre class="out" id="outRelay"></pre>
+      <pre class="out copyable" id="outRelay" role="button" tabindex="0"
+           title="タップでコピー" aria-label="生成されたリンク。タップするとコピーします"></pre>
+      <p class="hint" style="margin:0 0 8px">リンクを直接タップしてもコピーできます。</p>
       <div id="buildInfo"></div>
       <div class="row">
         <button type="button" class="primary" data-copy="outRelay">クリップボードにコピーする</button>
         <button type="button" data-open="outRelay">自分でテストする</button>
+        <span id="copyStatus" class="copied" aria-live="polite"></span>
       </div>
       <p class="hint" style="margin-bottom:0">このリンクを踏むと、1〜2秒のローディング画面を挟んで直接App Storeが開きます。</p>
     </div>
@@ -542,17 +557,16 @@
 
   function runRelay(destUrl) {
     $('relay').classList.remove('hidden');
-    $('relayDest').textContent = destUrl;
     $('relayLink').href = destUrl;
+
     var delay = 1000 + Math.random() * 1000;
+    setTimeout(function () { window.location.href = destUrl; }, delay);
 
-    var bar = $('relayBar');
-    bar.style.transition = 'width ' + delay + 'ms linear';
-    requestAnimationFrame(function () { requestAnimationFrame(function () { bar.style.width = '100%'; }); });
-
+    // 自動遷移が働かなかった場合の避難口。
+    // 遷移が成功していればページは既に離れているので表示されることはない。
     setTimeout(function () {
-      window.location.href = destUrl;
-    }, delay);
+      $('relayLink').classList.remove('hidden');
+    }, delay + 4000);
   }
 
   function showError(msg) {
@@ -568,20 +582,82 @@
     $('bootErr').classList.add('hidden');
   }
 
-  function copyText(text, btn) {
-    var orig = btn.textContent;
-    var done = function (ok) {
-      btn.textContent = ok ? 'コピーしました！' : '失敗しました';
-      setTimeout(function () { btn.textContent = orig; }, 1500);
-    };
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(text).then(function () { done(true); }).catch(function () { done(false); });
-    } else {
-      var ta = document.createElement('textarea'); ta.value = text;
-      document.body.appendChild(ta); ta.select();
-      try { done(document.execCommand('copy')); } catch (e) { done(false); }
-      document.body.removeChild(ta);
+  /* iOS Safari は textarea.select() では execCommand に選択範囲が渡らない。
+     Range で選択し、キーボードが出ないよう readonly を併用する。 */
+  function legacyCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.contentEditable = 'true';
+    ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:none;opacity:0';
+    document.body.appendChild(ta);
+
+    var ok = false;
+    try {
+      var range = document.createRange();
+      range.selectNodeContents(ta);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      ta.setSelectionRange(0, 999999);
+      ok = document.execCommand('copy');
+    } catch (e) {
+      ok = false;
     }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  function copyToClipboard(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text).then(
+        function () { return true; },
+        function () { return legacyCopy(text); }   // 権限拒否時は従来方式へ
+      );
+    }
+    return Promise.resolve(legacyCopy(text));
+  }
+
+  /* コピーできなかったときの最終手段。長押し→コピー ができるよう選択しておく。 */
+  function selectElementText(el) {
+    try {
+      var r = document.createRange();
+      r.selectNodeContents(el);
+      var s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+    } catch (e) {}
+  }
+
+  var copyStatusTimer = null;
+  function showCopyStatus(msg, ok) {
+    var el = $('copyStatus');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = ok ? 'var(--ok)' : 'var(--err)';
+    if (copyStatusTimer) clearTimeout(copyStatusTimer);
+    copyStatusTimer = setTimeout(function () { el.textContent = ''; }, 2000);
+  }
+
+  function copyFrom(sourceId, btn) {
+    var src = $(sourceId);
+    if (!src) return;
+    var text = src.textContent;
+    if (!text) return;
+
+    var orig = btn ? btn.textContent : null;
+    copyToClipboard(text).then(function (ok) {
+      if (btn) {
+        btn.textContent = ok ? 'コピーしました！' : '失敗しました';
+        setTimeout(function () { btn.textContent = orig; }, 1500);
+      }
+      if (ok) {
+        showCopyStatus('コピーしました', true);
+      } else {
+        showCopyStatus('コピーできません。長押しして選択してください', false);
+        selectElementText(src);
+      }
+    });
   }
 
   /* ================== 初期化 ================== */
@@ -593,10 +669,10 @@
       if (dest) {
         runRelay(dest.toString());
       } else {
-        // 旧コードは #builder 内の errBox に書いていたため、非表示のまま真っ白になっていた
+        // 遷移先が無いので黒画面のままだと手掛かりが無い。ここだけは文言を出す。
         $('relay').classList.remove('hidden');
-        $('relayTitle').textContent = 'リンクが不正です';
-        $('relayMsg').textContent = 'リンクを生成し直してください。';
+        $('relayMsg').classList.remove('hidden');
+        $('relayMsg').textContent = 'リンクが不正です。生成し直してください。';
       }
       return;
     }
@@ -619,10 +695,17 @@
       if (e.key === 'Enter') { e.preventDefault(); handleExtract(); }
     });
 
+    // 生成されたリンクを直接タップしてもコピーできるようにする
+    var out = $('outRelay');
+    out.addEventListener('click', function () { copyFrom('outRelay', null); });
+    out.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copyFrom('outRelay', null); }
+    });
+
     document.addEventListener('click', function (e) {
       var t = e.target && e.target.closest ? e.target.closest('button') : null;
       if (!t) return;
-      if (t.dataset.copy) copyText($(t.dataset.copy).textContent, t);
+      if (t.dataset.copy) copyFrom(t.dataset.copy, t);
       if (t.dataset.open) window.open($(t.dataset.open).textContent, '_blank', 'noopener');
     });
   }
