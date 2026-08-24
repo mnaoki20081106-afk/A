@@ -67,7 +67,7 @@ gcloud run deploy apiforurlgenerater \
 ### 動作確認
 
 ```
-curl -i https://<service-url>/healthz     # {"ok":true,"service":"tiktok-stealth-api"}
+curl -i https://<service-url>/healthz     # {"ok":true,"service":"tiktok-stealth-api","chrome":"/usr/bin/chromium"}
 ```
 
 `/healthz` はPuppeteerを起動しないため、Cloud Runの認証・CORS設定だけを
@@ -144,3 +144,19 @@ Actions タブ → 「Deploy to Cloud Run」→ 「Run workflow」。
 > サービスアカウントキーは長期有効な認証情報のため、不要になったら
 > Cloud Console から削除すること。より安全な方式が必要な場合は
 > Workload Identity 連携に切り替える。
+
+
+### サービスURLの確認
+
+`index.html` の `API_HOST` は Cloud Run のサービスURLを直接埋め込んでいる。
+Cloud Run は `SERVICE-HASH-REGION.a.run.app` 形式のURLを払い出すため、
+プロジェクト番号から推測した形式のURLとは一致しないことがある。
+正しいURLは次で確認する。
+
+```
+gcloud run services describe apiforurlgenerater \
+  --project stealth-api-for-url-generater --region asia-northeast1 \
+  --format='value(status.url)'
+```
+
+ここで得た値と `index.html` の `API_HOST` が一致していること。
