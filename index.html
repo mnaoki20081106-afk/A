@@ -188,8 +188,17 @@
       </div>
     </div>
 
+    <div class="field">
+      <label for="onelinkTpl">OneLink テンプレート（ドメイン補正用）</label>
+      <div class="row">
+        <input type="text" id="onelinkTpl" spellcheck="false" value="https://snssdk1180.onelink.me/BAuo">
+      </div>
+      <div class="hint">抽出結果が <code>lite.tiktok.com</code> などの短縮ドメインだった場合、このURLのドメイン＋パスに差し替えます。手動で取得できた正しい OneLink を入れてください。</div>
+    </div>
+
     <div class="checks">
       <label><input type="checkbox" id="optDp" checked><span><code>af_dp</code> を空文字で設定（通常版の起動ブロック）</span></label>
+      <label><input type="checkbox" id="optStrip" checked><span>ディープリンク系パラメータ（<code>deep_link_value</code> / <code>fallback_url</code> 等）を削除</span></label>
       <label><input type="checkbox" id="optRt" checked><span><code>is_retargeting=true</code> を設定</span></label>
       <label class="hidden"><input type="checkbox" id="optRelay" checked><span>中継URL生成</span></label>
     </div>
@@ -204,6 +213,7 @@
     <div class="card" id="relayCard" style="border: 2px solid var(--add);">
       <h2>✅ 完了！友達に送る最強リンク</h2>
       <pre class="out" id="outRelay"></pre>
+      <div id="buildInfo"></div>
       <div class="row">
         <button type="button" class="primary" data-copy="outRelay">クリップボードにコピーする</button>
         <button type="button" data-open="outRelay">自分でテストする</button>
@@ -405,16 +415,81 @@
   }
 
   /* ================== ビルド・リレー機能 ================== */
+  /* 通常版TikTokの起動を誘発しうるパラメータ。
+     af_dp だけは削除ではなく空文字で明示的に上書きする（既定値が復活するのを防ぐため）。 */
+  var DEEPLINK_PARAMS = [
+    'deep_link_value',
+    'deep_link_sub1', 'deep_link_sub2', 'deep_link_sub3', 'deep_link_sub4', 'deep_link_sub5',
+    'deep_link_sub6', 'deep_link_sub7', 'deep_link_sub8', 'deep_link_sub9', 'deep_link_sub10',
+    'af_deeplink',
+    'af_force_deeplink',
+    'af_web_dp',
+    'af_og_redirect',
+    'fallback_url',
+    'af_r',
+    'redirect_url',
+    'af_ios_fallback',
+    'af_android_fallback',
+    // 過去のインセンティブ系キャンペーンの残骸。
+    // 残っていると aweme:// 等のカスタムスキームへ勝手に飛ばされる。
+    'inc_target_url',
+    'is_inc_roma',
+    'incentive_redirect'
+  ];
+
+  var ONELINK_RE = /(^|\.)onelink\.me$/i;
+
+  /* 抽出結果が OneLink でなかった場合にドメインを補正する。
+     lite.tiktok.com / vt.tiktok.com のような短縮ドメインは AppsFlyer のパラメータを
+     解釈しないため、後からいくら付与しても無視されてしまう。 */
+  function coerceToOneLink(url, templateRaw, notes) {
+    if (ONELINK_RE.test(url.hostname)) return url;
+
+    var tpl = parseHttpUrl(templateRaw);
+    if (!tpl || !ONELINK_RE.test(tpl.hostname)) {
+      throw new Error('抽出URLのドメインが ' + url.hostname + ' で OneLink ではありません。'
+        + 'この形式ではパラメータを付けても無視されるため、中継リンクが機能しません。'
+        + '「OneLink テンプレート」に *.onelink.me のURLを入力してください。');
+    }
+
+    var merged = new URL(tpl.origin + tpl.pathname);
+    tpl.searchParams.forEach(function (v, k) { merged.searchParams.set(k, v); });
+
+    var carried = 0;
+    url.searchParams.forEach(function (v, k) { merged.searchParams.set(k, v); carried++; });
+
+    notes.push('ドメインを ' + url.hostname + ' → ' + merged.hostname + ' に補正しました。');
+    if (carried === 0) {
+      notes.push('警告: 元URLにクエリパラメータが1つもないため、招待コード等の識別情報を引き継げていません。'
+        + 'このままだと誰の紹介か記録されない可能性があります。抽出をやり直してください。');
+    }
+    return merged;
+  }
+
   function buildUrl(rawUrl, opts) {
     var url = parseHttpUrl(rawUrl);
     if (!url) throw new Error('トラッキング URL が不正です。');
+
+    var notes = [];
+    url = coerceToOneLink(url, opts.onelinkTemplate, notes);
+
     var params = url.searchParams;
+
+    // ディープリンク系を除去する。これをしないと deep_link_value 等が
+    // af_dp の空文字より優先され、通常版が直接起動してしまう。
+    var removed = [];
+    if (opts.stripDeepLinks) {
+      DEEPLINK_PARAMS.forEach(function (k) {
+        if (params.has(k)) { removed.push(k); params.delete(k); }
+      });
+    }
 
     if (opts.iosUrl) params.set('af_ios_url', opts.iosUrl);
     if (opts.androidUrl) params.set('af_android_url', opts.androidUrl);
     if (opts.emptyDp) params.set('af_dp', '');
     if (opts.retargeting) params.set('is_retargeting', 'true');
-    return url.toString();
+
+    return { url: url.toString(), removed: removed, notes: notes };
   }
 
   function handleBuild() {
@@ -424,19 +499,45 @@
         iosUrl: $('iosUrl').value.trim(),
         androidUrl: $('androidUrl').value.trim(),
         emptyDp: $('optDp').checked,
-        retargeting: $('optRt').checked
+        retargeting: $('optRt').checked,
+        stripDeepLinks: $('optStrip').checked,
+        onelinkTemplate: $('onelinkTpl').value.trim()
       };
-      var finalUrl = buildUrl($('srcUrl').value, opts);
+      var built = buildUrl($('srcUrl').value, opts);
 
       var relayUrl = new URL(window.location.href);
       relayUrl.search = ''; relayUrl.hash = '';
-      relayUrl.searchParams.set('to', finalUrl);
+      relayUrl.searchParams.set('to', built.url);
 
       $('outRelay').textContent = relayUrl.toString();
+      renderBuildInfo(built);
       $('results').classList.remove('hidden');
     } catch (e) {
       showError((e && e.message) ? e.message : String(e));
     }
+  }
+
+  /* 何を除去・補正したかを見せる。通常版が開いてしまう原因追跡に必要。 */
+  function renderBuildInfo(built) {
+    var box = $('buildInfo');
+    box.textContent = '';
+
+    built.notes.forEach(function (n) {
+      var p = document.createElement('p');
+      p.className = 'hint';
+      p.style.margin = '6px 0 0';
+      if (n.indexOf('警告') === 0) p.style.color = 'var(--err)';
+      p.textContent = n;
+      box.appendChild(p);
+    });
+
+    var p2 = document.createElement('p');
+    p2.className = 'hint';
+    p2.style.margin = '6px 0 0';
+    p2.textContent = built.removed.length
+      ? '除去したディープリンク系パラメータ: ' + built.removed.join(', ')
+      : '除去対象のディープリンク系パラメータはありませんでした。';
+    box.appendChild(p2);
   }
 
   function runRelay(destUrl) {
@@ -510,6 +611,7 @@
     $('btnBuild').addEventListener('click', handleBuild);
     $('btnClear').addEventListener('click', function () {
       $('shortUrl').value = ''; $('srcUrl').value = '';
+      $('buildInfo').textContent = '';
       $('results').classList.add('hidden');
       hideError();
     });
