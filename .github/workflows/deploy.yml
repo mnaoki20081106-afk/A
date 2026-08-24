@@ -1,0 +1,72 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: stealth-api-for-url-generater
+  SERVICE: apiforurlgenerater
+  REGION: asia-northeast1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # シークレット未設定でも失敗させない（設定するまでは何もせず成功扱い）
+      - name: Check for credentials
+        id: check
+        env:
+          SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        run: |
+          if [ -z "$SA_KEY" ]; then
+            echo "::notice::GCP_SA_KEY が未設定のためデプロイをスキップしました。README の手順を参照してください。"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.check.outputs.ready == 'true'
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        if: steps.check.outputs.ready == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud
+        if: steps.check.outputs.ready == 'true'
+        uses: google-github-actions/setup-gcloud@v2
+
+      # Chrome を積むので memory / timeout / 未認証許可をここで固定する
+      - name: Deploy
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --source . \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --memory 2Gi \
+            --cpu 1 \
+            --timeout 60 \
+            --allow-unauthenticated \
+            --quiet
+
+      # デプロイが本当に生きているかをワークフロー自身が確認する
+      - name: Smoke test /healthz
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          URL=$(gcloud run services describe "$SERVICE" \
+                  --project "$PROJECT_ID" --region "$REGION" \
+                  --format='value(status.url)')
+          echo "Service URL: $URL"
+          for i in 1 2 3 4 5; do
+            if curl -fsS "$URL/healthz"; then
+              echo; echo "healthz OK"; exit 0
+            fi
+            sleep 5
+          done
+          echo "healthz が応答しませんでした"; exit 1

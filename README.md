@@ -82,3 +82,65 @@ curl -i https://<service-url>/healthz     # {"ok":true,"service":"tiktok-stealth
 EACCES となりビルドが落ちるため、インストール中のみ `USER root` に戻している。
 また Chrome の再ダウンロード抑止は v20 以降 `PUPPETEER_SKIP_DOWNLOAD` が正式名で、
 旧名 `PUPPETEER_SKIP_CHROMIUM_DOWNLOAD` だけでは効かない。
+
+
+## デプロイ方法A: Cloud Shell（設定不要・最速）
+
+iPad などターミナルが無い環境向け。ブラウザだけで完結する。
+
+1. Safari で `shell.cloud.google.com` を開く（Googleアカウントで認証済みの`gcloud`が使える）
+2. 次を貼り付けて実行
+
+```
+git clone https://github.com/mnaoki20081106-afk/A.git ~/A 2>/dev/null; \
+cd ~/A && git pull && \
+gcloud run deploy apiforurlgenerater \
+  --source . --project stealth-api-for-url-generater \
+  --region asia-northeast1 \
+  --memory 2Gi --timeout 60 --allow-unauthenticated
+```
+
+ビルドログがその場に流れるので、失敗した場合も原因がすぐ分かる。
+
+## デプロイ方法B: GitHub Actions（初期設定後は自動）
+
+`main` への push で `.github/workflows/deploy.yml` が動き、ビルド・デプロイ・
+`/healthz` の疎通確認までを行う。ビルドログが GitHub Actions に残る。
+
+`GCP_SA_KEY` シークレットが未設定の間はスキップされるだけで失敗はしない。
+
+### 初期設定
+
+**1. サービスアカウントを作る**
+
+Cloud Console → IAM と管理 → サービス アカウント → 「サービス アカウントを作成」
+名前は `github-deployer` など。次のロールを付与する。
+
+| ロール | 用途 |
+| --- | --- |
+| Cloud Run 管理者 | サービスのデプロイ |
+| Cloud Build 編集者 | イメージのビルド |
+| Artifact Registry 管理者 | イメージの保存 |
+| ストレージ管理者 | ビルドソースのアップロード |
+| サービス アカウント ユーザー | 実行サービスアカウントの利用 |
+
+**2. キーを発行する**
+
+作成したサービスアカウント → 「キー」タブ → 「鍵を追加」→「新しい鍵を作成」→ **JSON**。
+ダウンロードされた JSON の中身を全文コピーする。
+
+**3. GitHub に登録する**
+
+リポジトリ → Settings → Secrets and variables → Actions → 「New repository secret」
+
+- Name: `GCP_SA_KEY`
+- Secret: 上でコピーした JSON 全文
+
+**4. 実行する**
+
+Actions タブ → 「Deploy to Cloud Run」→ 「Run workflow」。
+以降は `main` への push で自動的に走る。
+
+> サービスアカウントキーは長期有効な認証情報のため、不要になったら
+> Cloud Console から削除すること。より安全な方式が必要な場合は
+> Workload Identity 連携に切り替える。
