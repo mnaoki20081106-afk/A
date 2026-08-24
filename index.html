@@ -111,6 +111,10 @@
     max-height: 220px;
     overflow: auto;
   }
+  pre.out.copyable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  pre.out.copyable:hover { border-color: var(--accent); }
+  pre.out.copyable:active { border-color: var(--accent); background: var(--panel); }
+  .copied { font-size: 12px; font-weight: 600; color: var(--ok); margin-left: 4px; }
   .msg { font-size: 13px; padding: 10px 12px; border-radius: 6px; margin-bottom: 16px; white-space: pre-wrap; }
   .msg.err { background: var(--code-bg); color: var(--err); border: 1px solid var(--err); }
   table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
@@ -212,11 +216,14 @@
   <div id="results" class="hidden">
     <div class="card" id="relayCard" style="border: 2px solid var(--add);">
       <h2>✅ 完了！友達に送る最強リンク</h2>
-      <pre class="out" id="outRelay"></pre>
+      <pre class="out copyable" id="outRelay" role="button" tabindex="0"
+           title="タップでコピー" aria-label="生成されたリンク。タップするとコピーします"></pre>
+      <p class="hint" style="margin:0 0 8px">リンクを直接タップしてもコピーできます。</p>
       <div id="buildInfo"></div>
       <div class="row">
         <button type="button" class="primary" data-copy="outRelay">クリップボードにコピーする</button>
         <button type="button" data-open="outRelay">自分でテストする</button>
+        <span id="copyStatus" class="copied" aria-live="polite"></span>
       </div>
       <p class="hint" style="margin-bottom:0">このリンクを踏むと、1〜2秒のローディング画面を挟んで直接App Storeが開きます。</p>
     </div>
@@ -568,20 +575,82 @@
     $('bootErr').classList.add('hidden');
   }
 
-  function copyText(text, btn) {
-    var orig = btn.textContent;
-    var done = function (ok) {
-      btn.textContent = ok ? 'コピーしました！' : '失敗しました';
-      setTimeout(function () { btn.textContent = orig; }, 1500);
-    };
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(text).then(function () { done(true); }).catch(function () { done(false); });
-    } else {
-      var ta = document.createElement('textarea'); ta.value = text;
-      document.body.appendChild(ta); ta.select();
-      try { done(document.execCommand('copy')); } catch (e) { done(false); }
-      document.body.removeChild(ta);
+  /* iOS Safari は textarea.select() では execCommand に選択範囲が渡らない。
+     Range で選択し、キーボードが出ないよう readonly を併用する。 */
+  function legacyCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.contentEditable = 'true';
+    ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;padding:0;border:none;opacity:0';
+    document.body.appendChild(ta);
+
+    var ok = false;
+    try {
+      var range = document.createRange();
+      range.selectNodeContents(ta);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      ta.setSelectionRange(0, 999999);
+      ok = document.execCommand('copy');
+    } catch (e) {
+      ok = false;
     }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  function copyToClipboard(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text).then(
+        function () { return true; },
+        function () { return legacyCopy(text); }   // 権限拒否時は従来方式へ
+      );
+    }
+    return Promise.resolve(legacyCopy(text));
+  }
+
+  /* コピーできなかったときの最終手段。長押し→コピー ができるよう選択しておく。 */
+  function selectElementText(el) {
+    try {
+      var r = document.createRange();
+      r.selectNodeContents(el);
+      var s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+    } catch (e) {}
+  }
+
+  var copyStatusTimer = null;
+  function showCopyStatus(msg, ok) {
+    var el = $('copyStatus');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = ok ? 'var(--ok)' : 'var(--err)';
+    if (copyStatusTimer) clearTimeout(copyStatusTimer);
+    copyStatusTimer = setTimeout(function () { el.textContent = ''; }, 2000);
+  }
+
+  function copyFrom(sourceId, btn) {
+    var src = $(sourceId);
+    if (!src) return;
+    var text = src.textContent;
+    if (!text) return;
+
+    var orig = btn ? btn.textContent : null;
+    copyToClipboard(text).then(function (ok) {
+      if (btn) {
+        btn.textContent = ok ? 'コピーしました！' : '失敗しました';
+        setTimeout(function () { btn.textContent = orig; }, 1500);
+      }
+      if (ok) {
+        showCopyStatus('コピーしました', true);
+      } else {
+        showCopyStatus('コピーできません。長押しして選択してください', false);
+        selectElementText(src);
+      }
+    });
   }
 
   /* ================== 初期化 ================== */
@@ -619,10 +688,17 @@
       if (e.key === 'Enter') { e.preventDefault(); handleExtract(); }
     });
 
+    // 生成されたリンクを直接タップしてもコピーできるようにする
+    var out = $('outRelay');
+    out.addEventListener('click', function () { copyFrom('outRelay', null); });
+    out.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copyFrom('outRelay', null); }
+    });
+
     document.addEventListener('click', function (e) {
       var t = e.target && e.target.closest ? e.target.closest('button') : null;
       if (!t) return;
-      if (t.dataset.copy) copyText($(t.dataset.copy).textContent, t);
+      if (t.dataset.copy) copyFrom(t.dataset.copy, t);
       if (t.dataset.open) window.open($(t.dataset.open).textContent, '_blank', 'noopener');
     });
   }
