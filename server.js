@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
@@ -17,7 +18,40 @@ app.use(express.static(path.join(__dirname)));
 
 // 疎通確認用の軽量エンドポイント（Puppeteerを起動しない）
 // Cloud Runの「未認証の呼び出しを許可」やCORS設定だけを切り分けたいときに使う
-app.get('/healthz', (req, res) => res.json({ ok: true, service: 'tiktok-stealth-api' }));
+/* Chromeの実行ファイルを起動時に一度だけ解決する。
+   イメージによって置き場所が変わる（apt版は /usr/bin/... 、Puppeteer管理版はキャッシュ配下）ため、
+   パスを1つ決め打ちにせず、実在するものを順に探す。 */
+function resolveChromePath() {
+    const candidates = [
+        process.env.PUPPETEER_EXECUTABLE_PATH,
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/google-chrome-stable',
+        '/usr/bin/google-chrome'
+    ].filter(Boolean);
+
+    for (const p of candidates) {
+        try { if (fs.existsSync(p)) return p; } catch (e) {}
+    }
+    // 見つからなければ Puppeteer 自身の解決に委ねる
+    try {
+        const p = require('puppeteer').executablePath();
+        if (p && fs.existsSync(p)) return p;
+    } catch (e) {}
+    return null;
+}
+
+const CHROME_PATH = resolveChromePath();
+console.log(CHROME_PATH
+    ? `Chrome found at: ${CHROME_PATH}`
+    : 'WARNING: Chrome executable not found. /api/extract will fail.');
+
+// Chromeが見つかったかを外から確認できるようにする（Puppeteerは起動しない）
+app.get('/healthz', (req, res) => res.json({
+    ok: true,
+    service: 'tiktok-stealth-api',
+    chrome: CHROME_PATH
+}));
 
 app.get('/api/extract', async (req, res) => {
     const shortUrl = req.query.url;
@@ -26,9 +60,13 @@ app.get('/api/extract', async (req, res) => {
     let browser;
     try {
         // Docker内のChromeを使用するための設定
+        if (!CHROME_PATH) {
+            throw new Error('Chromeの実行ファイルが見つかりません。イメージにchromiumが含まれているか、'
+                + 'PUPPETEER_EXECUTABLE_PATH が正しいか確認してください。');
+        }
         browser = await puppeteer.launch({
             headless: "new",
-            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || null,
+            executablePath: CHROME_PATH,
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox', 
